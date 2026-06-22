@@ -1,0 +1,8 @@
+{
+  "name": "Remix: Arrow King ",
+  "description": "Create exact game replicas with matching designs, fluid animations, and professional sound effects for a seamless experience.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
