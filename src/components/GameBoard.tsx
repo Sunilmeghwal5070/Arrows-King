@@ -3,10 +3,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef } from 'react';
-import { ArrowPath, Point, AnimationState } from '../types';
-import { checkCollision, interpolateSectionPoints, getArrowTrack } from '../utils/collision';
-import { audio } from '../utils/audio';
+import React, { useState, useEffect, useRef } from "react";
+import { ArrowPath, Point, AnimationState } from "../types";
+import {
+  checkCollision,
+  interpolateSectionPoints,
+  getArrowTrack,
+} from "../utils/collision";
+import { audio } from "../utils/audio";
 
 interface GameBoardProps {
   key?: React.Key;
@@ -45,7 +49,7 @@ export function GameBoard({
   const isPanningRef = useRef(false);
   const lastPanRef = useRef({ x: 0, y: 0 });
   const dragAccumulatorRef = useRef(0);
-  
+
   // Local state for paths to animate and redraw 100% locally to prevent heavy parent App re-renders!
   const [localPaths, setLocalPaths] = useState<ArrowPath[]>(paths);
   const localPathsRef = useRef<ArrowPath[]>(paths);
@@ -61,26 +65,33 @@ export function GameBoard({
     localPathsRef.current = localPaths;
   }, [localPaths]);
 
+  const [isIntroPlaying, setIsIntroPlaying] = useState(true);
+
+  // Play intro animation only once when the GameBoard mounts
+  useEffect(() => {
+    const introTime = paths.length * 55 + 650 + 100;
+    const t = setTimeout(() => setIsIntroPlaying(false), introTime);
+    return () => clearTimeout(t);
+  }, [paths.length]);
+
   // Sync localPaths with incoming prop changes (like restarts, level changes, hint activations)
   // We preserve active animation statuses of any currently moving arrows to prevent visual rewinds/jittering!
   useEffect(() => {
-    // If the incoming props represent a clean/all-idle board (restarts or level changes), clear completed arrow memory!
-    const allIdle = paths.every((p) => p.animState.type === 'idle');
-    if (allIdle) {
-      completedArrowIdsRef.current.clear();
-    }
-
     // Synchronize active animating IDs with the lock ref to ensure 100% sync
-    const activeRunning = paths.filter((p) => p.animState.type !== 'idle').map((p) => p.id);
+    const activeRunning = paths
+      .filter((p) => p.animState.type !== "idle")
+      .map((p) => p.id);
     launchingIdsRef.current = new Set(activeRunning);
 
     setLocalPaths((prevLocal) => {
       // Filter out any paths that have already completed escaping in this GameBoard instance!
-      const activeIncoming = paths.filter((incoming) => !completedArrowIdsRef.current.has(incoming.id));
+      const activeIncoming = paths.filter(
+        (incoming) => !completedArrowIdsRef.current.has(incoming.id),
+      );
 
       return activeIncoming.map((incoming) => {
         const existing = prevLocal.find((p) => p.id === incoming.id);
-        if (existing && existing.animState.type !== 'idle') {
+        if (existing && existing.animState.type !== "idle") {
           return {
             ...incoming,
             animState: existing.animState,
@@ -109,12 +120,13 @@ export function GameBoard({
     const loop = (time: number) => {
       // Clamp delta to maximum 30ms step size (33 FPS speed) to prevent huge movement leaps/skips on browser lag or freeze!
       const rawDelta = (time - lastTime) / 1000;
-      const delta = Math.min(rawDelta, 0.03); 
+      const delta = Math.min(rawDelta, 0.03);
       lastTime = time;
 
       const currentPaths = localPathsRef.current;
       const hasAnimating = currentPaths.some(
-        (p) => p.animState.type === 'escaping' || p.animState.type === 'bumping'
+        (p) =>
+          p.animState.type === "escaping" || p.animState.type === "bumping",
       );
 
       if (hasAnimating) {
@@ -122,50 +134,60 @@ export function GameBoard({
         let anyCompletedEscape = false;
         let anyCompletedBump = false;
 
-        const nextPaths = currentPaths.map((path) => {
-          if (path.animState.type === 'escaping') {
-            const nextProg = path.animState.progress + delta * 13.5; // Significantly faster and incredibly snappy escape speed (13.5)
-            
-            // Compute length to check if fully exited
-            const { totalLength } = getArrowTrack(path, gridWidth, gridHeight);
-            
-            if (nextProg > totalLength + 1.5) {
-              changed = true;
-              anyCompletedEscape = true;
-              completedArrowIdsRef.current.add(path.id); // Add to completed blocklist immediately!
-              return null;
-            } else {
-              changed = true;
-              return {
-                ...path,
-                animState: { type: 'escaping' as const, progress: nextProg, speed: 13.5 },
-              };
+        const nextPaths = currentPaths
+          .map((path) => {
+            if (path.animState.type === "escaping") {
+              const nextProg = path.animState.progress + delta * 13.5; // Significantly faster and incredibly snappy escape speed (13.5)
+
+              // Compute length to check if fully exited
+              const { totalLength } = getArrowTrack(
+                path,
+                gridWidth,
+                gridHeight,
+              );
+
+              if (nextProg > totalLength + 1.5) {
+                changed = true;
+                anyCompletedEscape = true;
+                completedArrowIdsRef.current.add(path.id); // Add to completed blocklist immediately!
+                return null;
+              } else {
+                changed = true;
+                return {
+                  ...path,
+                  animState: {
+                    type: "escaping" as const,
+                    progress: nextProg,
+                    speed: 13.5,
+                  },
+                };
+              }
+            } else if (path.animState.type === "bumping") {
+              const nextProg = path.animState.progress + delta * 6.5; // Quick snappy recoiling bump (approx 150ms)
+              if (nextProg >= 1.0) {
+                changed = true;
+                anyCompletedBump = true;
+                return {
+                  ...path,
+                  animState: { type: "idle" as const },
+                };
+              } else {
+                changed = true;
+                return {
+                  ...path,
+                  animState: {
+                    type: "bumping" as const,
+                    progress: nextProg,
+                    crashPoint: path.animState.crashPoint,
+                    targetPoint: path.animState.targetPoint,
+                    crashDistance: (path.animState as any).crashDistance,
+                  },
+                };
+              }
             }
-          } else if (path.animState.type === 'bumping') {
-            const nextProg = path.animState.progress + delta * 6.5; // Quick snappy recoiling bump (approx 150ms)
-            if (nextProg >= 1.0) {
-              changed = true;
-              anyCompletedBump = true;
-              return {
-                ...path,
-                animState: { type: 'idle' as const },
-              };
-            } else {
-              changed = true;
-              return {
-                ...path,
-                animState: {
-                  type: 'bumping' as const,
-                  progress: nextProg,
-                  crashPoint: path.animState.crashPoint,
-                  targetPoint: path.animState.targetPoint,
-                  crashDistance: (path.animState as any).crashDistance,
-                },
-              };
-            }
-          }
-          return path;
-        }).filter((p): p is ArrowPath => p !== null);
+            return path;
+          })
+          .filter((p): p is ArrowPath => p !== null);
 
         if (changed) {
           // Update the local state for fluid rendering frame-by-frame
@@ -203,7 +225,8 @@ export function GameBoard({
   };
 
   const triggerArrowLaunch = (arrow: ArrowPath) => {
-    if (arrow.animState.type !== 'idle') return;
+    if (isIntroPlaying) return;
+    if (arrow.animState.type !== "idle") return;
 
     // Fast-path synchronous lock to prevent overlapping animations from rapid double clicks or event combinations
     if (launchingIdsRef.current.has(arrow.id)) {
@@ -220,13 +243,18 @@ export function GameBoard({
     audio.playTap();
 
     const currentArrow = localPathsRef.current.find((p) => p.id === arrow.id);
-    if (!currentArrow || currentArrow.animState.type !== 'idle') {
+    if (!currentArrow || currentArrow.animState.type !== "idle") {
       launchingIdsRef.current.delete(arrow.id); // clear if check fails
       return;
     }
 
     // Perform exact collision check based on freshest state
-    const collision = checkCollision(currentArrow, localPathsRef.current, gridWidth, gridHeight);
+    const collision = checkCollision(
+      currentArrow,
+      localPathsRef.current,
+      gridWidth,
+      gridHeight,
+    );
 
     if (!collision.isBlocked) {
       // Safe Escape!
@@ -238,7 +266,11 @@ export function GameBoard({
             return {
               ...p,
               hasFailed: false, // Turn off red failed indicator since it escapes safely!
-              animState: { type: 'escaping' as const, progress: 0, speed: 13.5 },
+              animState: {
+                type: "escaping" as const,
+                progress: 0,
+                speed: 13.5,
+              },
             };
           }
           return p;
@@ -266,10 +298,11 @@ export function GameBoard({
               ...p,
               hasFailed: true,
               animState: {
-                type: 'bumping' as const,
+                type: "bumping" as const,
                 progress: 0,
                 crashPoint: collision.crashPoint!,
-                targetPoint: currentArrow.points[currentArrow.points.length - 1],
+                targetPoint:
+                  currentArrow.points[currentArrow.points.length - 1],
                 crashDistance: collision.crashDistance!,
               },
             };
@@ -286,36 +319,39 @@ export function GameBoard({
   // Logic to draw an arrowhead at a specific location
   const renderArrowHead = (
     tip: Point,
-    dir: 'U' | 'D' | 'L' | 'R',
+    dir: "U" | "D" | "L" | "R",
     strokeColor: string,
     size = 12.5,
     entryAnimationActive = false,
-    index = 0
+    index = 0,
   ) => {
     const screenTip = toScreen(tip);
 
-    let pLine = '';
+    let pLine = "";
     switch (dir) {
-      case 'U':
+      case "U":
         pLine = `M ${screenTip.x - size} ${screenTip.y + size * 1.2} L ${screenTip.x} ${screenTip.y} L ${screenTip.x + size} ${screenTip.y + size * 1.2}`;
         break;
-      case 'D':
+      case "D":
         pLine = `M ${screenTip.x - size} ${screenTip.y - size * 1.2} L ${screenTip.x} ${screenTip.y} L ${screenTip.x + size} ${screenTip.y - size * 1.2}`;
         break;
-      case 'L':
+      case "L":
         pLine = `M ${screenTip.x + size * 1.2} ${screenTip.y - size} L ${screenTip.x} ${screenTip.y} L ${screenTip.x + size * 1.2} ${screenTip.y + size}`;
         break;
-      case 'R':
+      case "R":
         pLine = `M ${screenTip.x - size * 1.2} ${screenTip.y - size} L ${screenTip.x} ${screenTip.y} L ${screenTip.x - size * 1.2} ${screenTip.y + size}`;
         break;
     }
 
-    const headStyle: React.CSSProperties = entryAnimationActive ? {
-      opacity: 0,
-      transformOrigin: `${screenTip.x}px ${screenTip.y}px`,
-      animation: 'arrowHeadPop 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards',
-      animationDelay: `${index * 55 + 450}ms`,
-    } : {};
+    const headStyle: React.CSSProperties = entryAnimationActive
+      ? {
+          opacity: 0,
+          transformOrigin: `${screenTip.x}px ${screenTip.y}px`,
+          animation:
+            "arrowHeadPop 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards",
+          animationDelay: `${index * 55 + 450}ms`,
+        }
+      : {};
 
     return (
       <g style={headStyle}>
@@ -333,32 +369,32 @@ export function GameBoard({
 
   // Render an individual arrow path, taking into account offsets for slide and crash animations
   const renderPath = (arrow: ArrowPath, index: number) => {
-    const isEscaping = arrow.animState.type === 'escaping';
-    const isBumping = arrow.animState.type === 'bumping';
+    const isEscaping = arrow.animState.type === "escaping";
+    const isBumping = arrow.animState.type === "bumping";
     const isHint = arrow.isHint;
 
     let displayPoints = arrow.points;
     let headTip = arrow.points[arrow.points.length - 1];
 
-    if (isEscaping && arrow.animState.type === 'escaping') {
+    if (isEscaping && arrow.animState.type === "escaping") {
       // Calculate smooth sliding snake path coordinates
       displayPoints = interpolateSectionPoints(
         arrow.points,
         arrow.exitDirection,
         gridWidth,
         gridHeight,
-        arrow.animState.progress
+        arrow.animState.progress,
       );
       if (displayPoints.length > 0) {
         headTip = displayPoints[displayPoints.length - 1];
       } else {
         return null;
       }
-    } else if (isBumping && arrow.animState.type === 'bumping') {
+    } else if (isBumping && arrow.animState.type === "bumping") {
       // Recoil along winding tracks keeping elements on track smoothly
       const t = arrow.animState.progress;
       const deviationMult = Math.sin(t * Math.PI); // sine curve 0 -> 1 -> 0
-      
+
       const crashDistance = arrow.animState.crashDistance ?? 0.5;
       const shiftDist = crashDistance * deviationMult * 0.94;
 
@@ -367,7 +403,7 @@ export function GameBoard({
         arrow.exitDirection,
         gridWidth,
         gridHeight,
-        shiftDist
+        shiftDist,
       );
       if (displayPoints.length > 0) {
         headTip = displayPoints[displayPoints.length - 1];
@@ -375,17 +411,17 @@ export function GameBoard({
     }
 
     // Colors mapping 100% same setup
-    let strokeColor = '#132143'; // Beautiful deep navy
+    let strokeColor = "#132143"; // Beautiful deep navy
     if (isEscaping) {
-      strokeColor = '#10b981'; // Vibrant green while escaping (always green when successfully flying!)
+      strokeColor = "#10b981"; // Vibrant green while escaping (always green when successfully flying!)
     } else if (arrow.hasFailed || shakeId === arrow.id) {
-      strokeColor = '#e11d48'; // Bright crimson red on bump, staying red permanently
+      strokeColor = "#e11d48"; // Bright crimson red on bump, staying red permanently
     } else if (isHint) {
-      strokeColor = '#0284c7'; // Deep sky blue for hints
+      strokeColor = "#0284c7"; // Deep sky blue for hints
     }
 
     // Build the SVG path string
-    let dStr = '';
+    let dStr = "";
     if (displayPoints.length > 0) {
       const pFirst = toScreen(displayPoints[0]);
       dStr += `M ${pFirst.x} ${pFirst.y}`;
@@ -396,9 +432,11 @@ export function GameBoard({
     }
 
     // Outer glow for hints and triggers
-    const hintFilter = isHint ? 'drop-shadow(0 0 8px rgba(0, 186, 255, 0.75))' : undefined;
+    const hintFilter = isHint
+      ? "drop-shadow(0 0 8px rgba(0, 186, 255, 0.75))"
+      : undefined;
 
-    const entryAnimationActive = !isEscaping && !isBumping;
+    const entryAnimationActive = isIntroPlaying && !isEscaping && !isBumping;
     const customStyle: React.CSSProperties = {
       filter: hintFilter,
     };
@@ -411,19 +449,21 @@ export function GameBoard({
       return acc + Math.sqrt(dx * dx + dy * dy) * cellSpacing;
     }, 0);
 
-    const bodyPathStyle: React.CSSProperties = entryAnimationActive ? {
-      strokeDasharray: `${totalPixelLength}`,
-      strokeDashoffset: `${totalPixelLength}`,
-      animation: 'arrowStrokeDraw 0.65s cubic-bezier(0.16, 1, 0.3, 1) both',
-      animationDelay: `${index * 55}ms`,
-    } : {};
+    const bodyPathStyle: React.CSSProperties = entryAnimationActive
+      ? {
+          strokeDasharray: `${totalPixelLength}`,
+          strokeDashoffset: `${totalPixelLength}`,
+          animation: "arrowStrokeDraw 0.65s cubic-bezier(0.16, 1, 0.3, 1) both",
+          animationDelay: `${index * 55}ms`,
+        }
+      : {};
 
     return (
       <g
         key={arrow.id}
         style={customStyle}
         className={`cursor-pointer select-none ${
-          isEscaping || isBumping ? '' : 'transition-colors duration-150'
+          isEscaping || isBumping ? "" : "transition-colors duration-150"
         }`}
         onPointerDown={(e) => {
           e.stopPropagation(); // Prevent parent SVG from grabbing pointer capture on arrow clicks!
@@ -455,7 +495,7 @@ export function GameBoard({
             className="animate-pulse"
           />
         )}
-        
+
         {/* Base thick stroke */}
         <path
           d={dStr}
@@ -468,7 +508,14 @@ export function GameBoard({
         />
 
         {/* Dynamic customized arrowhead wing */}
-        {renderArrowHead(headTip, arrow.exitDirection, strokeColor, 12.5, entryAnimationActive, index)}
+        {renderArrowHead(
+          headTip,
+          arrow.exitDirection,
+          strokeColor,
+          12.5,
+          entryAnimationActive,
+          index,
+        )}
       </g>
     );
   };
@@ -480,16 +527,16 @@ export function GameBoard({
     const minY = marginPadding - 15 * cellSpacing;
     const w = (gridWidth + 30) * cellSpacing;
     const h = (gridHeight + 30) * cellSpacing;
-    
+
     return (
       <>
         <defs>
-          <pattern 
-            id="align-dots-pattern" 
-            width={cellSpacing} 
-            height={cellSpacing} 
-            patternUnits="userSpaceOnUse" 
-            x={marginPadding} 
+          <pattern
+            id="align-dots-pattern"
+            width={cellSpacing}
+            height={cellSpacing}
+            patternUnits="userSpaceOnUse"
+            x={marginPadding}
             y={marginPadding}
           >
             <circle cx="0" cy="0" r="2.2" fill="#cbd5e1" opacity="0.8" />
@@ -512,39 +559,44 @@ export function GameBoard({
     if (!showGridLines) return null;
     return localPaths.map((arrow) => {
       // Don't draw guides for completed/escaping arrows if they're almost gone
-      if (arrow.animState.type === 'escaping') return null;
+      if (arrow.animState.type === "escaping") return null;
 
       const headPoint = arrow.points[arrow.points.length - 1];
       const screenHead = toScreen(headPoint);
       let endX = screenHead.x;
       let endY = screenHead.y;
 
-      const collision = checkCollision(arrow, localPaths, gridWidth, gridHeight);
+      const collision = checkCollision(
+        arrow,
+        localPaths,
+        gridWidth,
+        gridHeight,
+      );
       if (collision.isBlocked && collision.crashPoint) {
         const screenCrash = toScreen(collision.crashPoint);
         endX = screenCrash.x;
         endY = screenCrash.y;
       } else {
         switch (arrow.exitDirection) {
-          case 'U':
+          case "U":
             endY = 0;
             break;
-          case 'D':
+          case "D":
             endY = svgHeight;
             break;
-          case 'L':
+          case "L":
             endX = 0;
             break;
-          case 'R':
+          case "R":
             endX = svgWidth;
             break;
         }
       }
 
       // Choose a beautiful matching faint translucent color matching the arrow's personality
-      let color = 'rgba(19, 33, 67, 0.45)'; // Default deep navy translucent
+      let color = "rgba(19, 33, 67, 0.45)"; // Default deep navy translucent
       if (arrow.isHint) {
-        color = 'rgba(2, 132, 199, 0.6)'; // Faint sky blue
+        color = "rgba(2, 132, 199, 0.6)"; // Faint sky blue
       }
 
       return (
@@ -577,36 +629,37 @@ export function GameBoard({
   };
 
   // Find middle vertical arrow coordinate for Tutorial Helper Ring in Level 1
-  const tutorialArrow = localPaths.find((p) => p.id === 'L1-2');
+  const tutorialArrow = localPaths.find((p) => p.id === "L1-2");
 
   // A level is complex if there are 6 or more arrows, OR grid is larger than 6x6
-  const isComplexLevel = localPaths.length >= 6 || gridWidth >= 7 || gridHeight >= 7;
+  const isComplexLevel =
+    localPaths.length >= 6 || gridWidth >= 7 || gridHeight >= 7;
 
   return (
-    <div className="relative w-full max-w-2xl lg:max-w-3xl mx-auto flex flex-col justify-center items-center select-none pt-2">
+    <div className="relative w-full h-full flex flex-col justify-center items-center select-none">
       {/* Dynamic Red vignette border overlay on crash, covering the entire display screen beautifully! */}
       {redFlash && (
-        <div 
+        <div
           className="fixed inset-0 pointer-events-none z-50 transition-all duration-300 animate-pulse"
           style={{
-            boxShadow: 'inset 0 0 55px rgba(239, 68, 68, 0.45)',
-            background: 'rgba(239, 68, 68, 0.03)',
+            boxShadow: "inset 0 0 55px rgba(239, 68, 68, 0.45)",
+            background: "rgba(239, 68, 68, 0.03)",
           }}
         />
       )}
 
       {/* Main Board Container - Stays stable, centered and completely borderless/transparent */}
-      <div 
-        className="relative w-full h-[64vh] md:h-[72vh] min-h-[440px] max-h-[680px] overflow-hidden flex items-center justify-center transition-all"
-        style={{ touchAction: 'none' }}
+      <div
+        className="relative w-full h-full flex items-center justify-center transition-all overflow-visible"
+        style={{ touchAction: "none" }}
       >
         <svg
           ref={svgRef}
           viewBox={`0 0 ${svgWidth} ${svgHeight}`}
-          className="w-full h-auto max-w-full drop-shadow-sm select-none"
-          style={{ touchAction: 'none', cursor: 'grab' }}
+          className="w-full h-auto drop-shadow-sm select-none overflow-visible"
+          style={{ touchAction: "none", cursor: "grab", maxHeight: "80vh" }}
           onPointerDown={(e) => {
-            if (e.pointerType === 'mouse' && e.button !== 0) return;
+            if (e.pointerType === "mouse" && e.button !== 0) return;
             isPanningRef.current = true;
             lastPanRef.current = { x: e.clientX, y: e.clientY };
             dragAccumulatorRef.current = 0;
@@ -617,7 +670,6 @@ export function GameBoard({
             const dx = e.clientX - lastPanRef.current.x;
             const dy = e.clientY - lastPanRef.current.y;
             dragAccumulatorRef.current += Math.abs(dx) + Math.abs(dy);
-            setPanState(prev => ({ x: prev.x + dx, y: prev.y + dy }));
             lastPanRef.current = { x: e.clientX, y: e.clientY };
           }}
           onPointerUp={(e) => {
@@ -629,8 +681,8 @@ export function GameBoard({
             e.currentTarget.releasePointerCapture(e.pointerId);
           }}
         >
-          {/* Apply native SVG translation and scaling group */}
-          <g transform={`translate(${panState.x}, ${panState.y}) scale(${scale})`} style={{ transformOrigin: 'center' }}>
+          {/* Main SVG group - pan/zoom handled externally by react-zoom-pan-pinch */}
+          <g style={{ transformOrigin: "center" }}>
             {/* Grey alignment dots */}
             {renderAlignmentDots()}
 
@@ -642,13 +694,11 @@ export function GameBoard({
           </g>
         </svg>
 
-
-
         {/* Tutorial Overlays for Level 1 */}
         {levelNumber === 1 && tutorialArrow && (
           <div className="absolute inset-0 pointer-events-none z-20 flex flex-col items-center justify-center">
             {/* White/Yellow hand animation jumping */}
-            <div 
+            <div
               className="absolute animate-bounce"
               style={{
                 top: `${toScreen(tutorialArrow.points[0]).y - 45}px`,
@@ -663,7 +713,7 @@ export function GameBoard({
             </div>
 
             {/* Custom Tooltip text */}
-            <div 
+            <div
               className="absolute bg-sky-500 text-white font-medium text-sm py-2.5 px-5 rounded-xl shadow-lg flex flex-col items-center justify-center animate-pulse border border-sky-300"
               style={{
                 top: `${toScreen(tutorialArrow.points[0]).y + 10}px`,

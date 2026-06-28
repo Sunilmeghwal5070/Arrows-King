@@ -3,34 +3,61 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, Component, ErrorInfo, ReactNode } from 'react';
-import { GameScreen, ArrowPath, LevelConfig } from './types';
-import { getLevelConfig, getSolvableArrows } from './utils/levels';
-import { GameBoard } from './components/GameBoard';
-import { MenuScreen } from './components/MenuScreen';
-import { LevelCompleteModal } from './components/LevelCompleteModal';
-import { OutOfLivesModal } from './components/OutOfLivesModal';
-import { SettingsModal } from './components/SettingsModal';
-import { audio } from './utils/audio';
+import React, {
+  useState,
+  useEffect,
+  Component,
+  ErrorInfo,
+  ReactNode,
+} from "react";
+import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
+import { GameScreen, ArrowPath, LevelConfig } from "./types";
+import { getLevelConfig, getSolvableArrows } from "./utils/levels";
+import { GameBoard } from "./components/GameBoard";
+import { MenuScreen } from "./components/MenuScreen";
+import { LevelCompleteModal } from "./components/LevelCompleteModal";
+import { OutOfLivesModal } from "./components/OutOfLivesModal";
+import { SettingsModal } from "./components/SettingsModal";
+import { audio } from "./utils/audio";
 
 // Icons
-import { ChevronLeft, RotateCcw, Lightbulb, Settings, Heart, Send, Sparkles, RefreshCw, HeartCrack, Lock, Home } from 'lucide-react';
+import {
+  ChevronLeft,
+  RotateCcw,
+  Lightbulb,
+  Settings,
+  Heart,
+  Send,
+  Sparkles,
+  RefreshCw,
+  HeartCrack,
+  Lock,
+  Home,
+} from "lucide-react";
 
 function isValidSavedState(saved: any): boolean {
   if (!saved) return false;
   try {
-    if (typeof saved.levelNumber !== 'number' || isNaN(saved.levelNumber)) return false;
-    if (typeof saved.screen !== 'string') return false;
-    if (!Array.isArray(saved.activePaths) || saved.activePaths.length === 0) return false;
+    if (typeof saved.levelNumber !== "number" || isNaN(saved.levelNumber))
+      return false;
+    if (typeof saved.screen !== "string") return false;
+    if (typeof saved.lives === "number" && saved.lives <= 0) return false;
+    if (!Array.isArray(saved.activePaths) || saved.activePaths.length === 0)
+      return false;
     for (const path of saved.activePaths) {
-      if (!path || typeof path.id !== 'string') return false;
+      if (!path || typeof path.id !== "string") return false;
       if (!Array.isArray(path.points) || path.points.length === 0) return false;
       for (const pt of path.points) {
-        if (typeof pt.x !== 'number' || isNaN(pt.x)) return false;
-        if (typeof pt.y !== 'number' || isNaN(pt.y)) return false;
+        if (typeof pt.x !== "number" || isNaN(pt.x)) return false;
+        if (typeof pt.y !== "number" || isNaN(pt.y)) return false;
       }
-      if (!path.exitDirection || !['U', 'D', 'L', 'R'].includes(path.exitDirection)) return false;
-      if (!path.animState || typeof path.animState.type !== 'string') return false;
+      if (
+        !path.exitDirection ||
+        !["U", "D", "L", "R"].includes(path.exitDirection)
+      )
+        return false;
+      if (!path.animState || typeof path.animState.type !== "string")
+        return false;
     }
     return true;
   } catch {
@@ -50,7 +77,7 @@ interface State {
 class ErrorBoundary extends React.Component<any, any> {
   state = {
     hasError: false,
-    error: null as any
+    error: null as any,
   };
 
   static getDerivedStateFromError(error: any) {
@@ -77,9 +104,12 @@ class ErrorBoundary extends React.Component<any, any> {
           <div className="w-16 h-16 bg-rose-500/20 text-rose-400 rounded-full flex items-center justify-center mb-4 border border-rose-500/40">
             <RefreshCw className="w-8 h-8 animate-spin" />
           </div>
-          <h2 className="text-2xl font-black tracking-tight mb-2 col-span-full">Something Went Wrong</h2>
+          <h2 className="text-2xl font-black tracking-tight mb-2 col-span-full">
+            Something Went Wrong
+          </h2>
           <p className="text-slate-400 text-sm max-w-sm mb-6">
-            An unexpected error occurred while loading the game state. Tap the button below to factory reset and play freshly!
+            An unexpected error occurred while loading the game state. Tap the
+            button below to factory reset and play freshly!
           </p>
           <button
             onClick={this.handleReset}
@@ -104,13 +134,13 @@ function AppInner() {
   // Load unified saved state if available to support mid-game recovery!
   const savedState = (() => {
     try {
-      const savedStr = localStorage.getItem('arrow_puzzle_midgame_save');
+      const savedStr = localStorage.getItem("arrow_puzzle_midgame_save");
       if (!savedStr) return null;
       const parsed = JSON.parse(savedStr);
       if (isValidSavedState(parsed)) {
         return parsed;
       } else {
-        localStorage.removeItem('arrow_puzzle_midgame_save');
+        localStorage.removeItem("arrow_puzzle_midgame_save");
         return null;
       }
     } catch {
@@ -119,19 +149,26 @@ function AppInner() {
   })();
 
   const [screen, setScreen] = useState<GameScreen>(() => {
-    if (savedState && (savedState.screen === 'GAMEPLAY' || savedState.screen === 'DAILY_SCREEN')) {
+    if (
+      savedState &&
+      (savedState.screen === "GAMEPLAY" || savedState.screen === "DAILY_SCREEN")
+    ) {
       return savedState.screen;
     }
-    return 'MENU';
+    return "MENU";
   });
-  
+
   // Game Progression
   const [levelNumber, setLevelNumber] = useState<number>(() => {
-    if (savedState && typeof savedState.levelNumber === 'number' && !isNaN(savedState.levelNumber)) {
+    if (
+      savedState &&
+      typeof savedState.levelNumber === "number" &&
+      !isNaN(savedState.levelNumber)
+    ) {
       return savedState.levelNumber;
     }
     try {
-      const persisted = localStorage.getItem('arrow_puzzle_lvl');
+      const persisted = localStorage.getItem("arrow_puzzle_lvl");
       if (persisted) {
         const parsed = parseInt(persisted, 10);
         return isNaN(parsed) || parsed < 1 ? 1 : parsed;
@@ -144,7 +181,7 @@ function AppInner() {
 
   const [maxUnlockedLevel, setMaxUnlockedLevel] = useState<number>(() => {
     try {
-      const persisted = localStorage.getItem('arrow_puzzle_max_unlocked');
+      const persisted = localStorage.getItem("arrow_puzzle_max_unlocked");
       if (persisted) {
         const parsed = parseInt(persisted, 10);
         return isNaN(parsed) || parsed < 1 ? 1 : parsed;
@@ -157,11 +194,15 @@ function AppInner() {
 
   const [currentConfig, setCurrentConfig] = useState<LevelConfig | null>(() => {
     let lvlNum = 1;
-    if (savedState && typeof savedState.levelNumber === 'number' && !isNaN(savedState.levelNumber)) {
+    if (
+      savedState &&
+      typeof savedState.levelNumber === "number" &&
+      !isNaN(savedState.levelNumber)
+    ) {
       lvlNum = savedState.levelNumber;
     } else {
       try {
-        const persisted = localStorage.getItem('arrow_puzzle_lvl');
+        const persisted = localStorage.getItem("arrow_puzzle_lvl");
         if (persisted) {
           const parsed = parseInt(persisted, 10);
           lvlNum = isNaN(parsed) || parsed < 1 ? 1 : parsed;
@@ -176,22 +217,35 @@ function AppInner() {
   });
 
   const [activePaths, setActivePaths] = useState<ArrowPath[]>(() => {
-    if (savedState && Array.isArray(savedState.activePaths) && savedState.activePaths.length > 0) {
+    if (
+      savedState &&
+      Array.isArray(savedState.activePaths) &&
+      savedState.activePaths.length > 0
+    ) {
       return savedState.activePaths;
     }
     return [];
   });
-  
+
   // Player Stats
+  const [restartCount, setRestartCount] = useState(0);
   const [lives, setLives] = useState<number>(() => {
-    if (savedState && typeof savedState.lives === 'number' && !isNaN(savedState.lives)) {
+    if (
+      savedState &&
+      typeof savedState.lives === "number" &&
+      !isNaN(savedState.lives)
+    ) {
       return savedState.lives;
     }
     return 3;
   });
 
   const [movesLeft, setMovesLeft] = useState<number>(() => {
-    if (savedState && typeof savedState.movesLeft === 'number' && !isNaN(savedState.movesLeft)) {
+    if (
+      savedState &&
+      typeof savedState.movesLeft === "number" &&
+      !isNaN(savedState.movesLeft)
+    ) {
       return savedState.movesLeft;
     }
     return 10;
@@ -199,7 +253,7 @@ function AppInner() {
 
   const [hintsCount, setHintsCount] = useState<number>(() => {
     try {
-      const persisted = localStorage.getItem('arrow_puzzle_hints');
+      const persisted = localStorage.getItem("arrow_puzzle_hints");
       if (persisted !== null) {
         const parsed = parseInt(persisted, 10);
         return isNaN(parsed) ? 0 : parsed;
@@ -210,29 +264,33 @@ function AppInner() {
     }
   });
   const [justEarnedHint, setJustEarnedHint] = useState(false);
-  const [levelsPlayedSinceLastHint, setLevelsPlayedSinceLastHint] = useState<number>(() => {
-    try {
-      const saved = localStorage.getItem('arrow_puzzle_levels_since_hint');
-      if (saved) {
-        const parsed = parseInt(saved, 10);
-        return isNaN(parsed) ? 0 : parsed;
+  const [levelsPlayedSinceLastHint, setLevelsPlayedSinceLastHint] =
+    useState<number>(() => {
+      try {
+        const saved = localStorage.getItem("arrow_puzzle_levels_since_hint");
+        if (saved) {
+          const parsed = parseInt(saved, 10);
+          return isNaN(parsed) ? 0 : parsed;
+        }
+        return 0;
+      } catch {
+        return 0;
       }
-      return 0;
-    } catch {
-      return 0;
-    }
-  });
-  
+    });
+
   // Interface Toggles
   const [showGridLines, setShowGridLines] = useState(false);
   const [showCompleteModal, setShowCompleteModal] = useState(false);
   const [showLivesModal, setShowLivesModal] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [clearedToast, setClearedToast] = useState<{ text: string; emoji: string } | null>(null);
+  const [clearedToast, setClearedToast] = useState<{
+    text: string;
+    emoji: string;
+  } | null>(null);
   const [autoNext, setAutoNext] = useState<boolean>(() => {
     try {
-      const saved = localStorage.getItem('arrow_puzzle_auto_next');
-      return saved === 'true'; // Defaults to false (OFF) exactly as requested so they can customize toggling it on/off!
+      const saved = localStorage.getItem("arrow_puzzle_auto_next");
+      return saved === "true"; // Defaults to false (OFF) exactly as requested so they can customize toggling it on/off!
     } catch {
       return false;
     }
@@ -241,78 +299,94 @@ function AppInner() {
   // Sync autoNext setting to localStorage
   useEffect(() => {
     try {
-      localStorage.setItem('arrow_puzzle_auto_next', String(autoNext));
+      localStorage.setItem("arrow_puzzle_auto_next", String(autoNext));
     } catch (e) {
-      console.warn('Storage disabled', e);
+      console.warn("Storage disabled", e);
     }
   }, [autoNext]);
 
   // Persistence Sync
   useEffect(() => {
     try {
-      localStorage.setItem('arrow_puzzle_lvl', levelNumber.toString());
+      localStorage.setItem("arrow_puzzle_lvl", levelNumber.toString());
     } catch (e) {
-      console.warn('Storage disabled', e);
+      console.warn("Storage disabled", e);
     }
   }, [levelNumber]);
 
   useEffect(() => {
     try {
-      localStorage.setItem('arrow_puzzle_max_unlocked', maxUnlockedLevel.toString());
+      localStorage.setItem(
+        "arrow_puzzle_max_unlocked",
+        maxUnlockedLevel.toString(),
+      );
     } catch (e) {
-      console.warn('Storage disabled', e);
+      console.warn("Storage disabled", e);
     }
   }, [maxUnlockedLevel]);
 
   useEffect(() => {
     try {
-      localStorage.setItem('arrow_puzzle_hints', hintsCount.toString());
+      localStorage.setItem("arrow_puzzle_hints", hintsCount.toString());
     } catch (e) {
-      console.warn('Storage disabled', e);
+      console.warn("Storage disabled", e);
     }
   }, [hintsCount]);
 
   // Midgame Save Persistence Sync
   useEffect(() => {
     try {
-      localStorage.setItem('arrow_puzzle_midgame_save', JSON.stringify({
-        levelNumber,
-        activePaths,
-        lives,
-        movesLeft,
-        screen,
-      }));
+      localStorage.setItem(
+        "arrow_puzzle_midgame_save",
+        JSON.stringify({
+          levelNumber,
+          activePaths,
+          lives,
+          movesLeft,
+          screen,
+        }),
+      );
     } catch (e) {
-      console.warn('Storage disabled', e);
+      console.warn("Storage disabled", e);
     }
   }, [levelNumber, activePaths, lives, movesLeft, screen]);
 
+  const [isLoadingLevel, setIsLoadingLevel] = useState(false);
+
   // Load level on start or level change
   const loadLevel = (lvlNum: number, isDaily = false) => {
-    const config = getLevelConfig(lvlNum);
-    setCurrentConfig(config);
-    // Deep copy initial paths to manage layout state
-    const copiedPaths = JSON.parse(JSON.stringify(config.paths));
-    setActivePaths(copiedPaths);
-    setMovesLeft(config.maxMoves);
-    setLives(3); // Reset lives to 3 on every level start!
-    // Hints count is persistent, no reset to 3 here!
-    setShowCompleteModal(false);
-    setShowLivesModal(false);
-    setErrorMessage(null);
-    setJustEarnedHint(false); // Reset hint reward highlight status
+    setIsLoadingLevel(true);
+    // Use requestAnimationFrame to ensure the browser has painted the loading state
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        const config = getLevelConfig(lvlNum);
+        setCurrentConfig(config);
+        // Deep copy initial paths to manage layout state
+        const copiedPaths = JSON.parse(JSON.stringify(config.paths));
+        setActivePaths(copiedPaths);
+        setMovesLeft(config.maxMoves);
+        setLives(3); // Reset lives to 3 on every level start!
+        // Hints count is persistent, no reset to 3 here!
+        setShowCompleteModal(false);
+        setShowLivesModal(false);
+        setErrorMessage(null);
+        setJustEarnedHint(false); // Reset hint reward highlight status
+        setRestartCount((c) => c + 1);
+        setIsLoadingLevel(false);
+      }, 50);
+    });
   };
 
   const handleStartGame = () => {
     try {
-      const savedStr = localStorage.getItem('arrow_puzzle_midgame_save');
+      const savedStr = localStorage.getItem("arrow_puzzle_midgame_save");
       if (savedStr) {
         const saved = JSON.parse(savedStr);
         if (
           saved.levelNumber === levelNumber &&
           saved.activePaths &&
           saved.activePaths.length > 0 &&
-          saved.activePaths.some((p: any) => p.animState.type !== 'escaping')
+          saved.activePaths.some((p: any) => p.animState.type !== "escaping")
         ) {
           // Resume saved state exactly!
           const config = getLevelConfig(levelNumber);
@@ -320,7 +394,7 @@ function AppInner() {
           setActivePaths(saved.activePaths);
           setLives(saved.lives ?? 3);
           setMovesLeft(saved.movesLeft ?? config.maxMoves);
-          setScreen('GAMEPLAY');
+          setScreen("GAMEPLAY");
           audio.playTap();
           return;
         }
@@ -330,7 +404,7 @@ function AppInner() {
     }
 
     loadLevel(levelNumber);
-    setScreen('GAMEPLAY');
+    setScreen("GAMEPLAY");
     audio.playTap();
   };
 
@@ -340,15 +414,15 @@ function AppInner() {
     const dailyLvl = 50 + day; // e.g. level 51 to 81
 
     try {
-      const savedStr = localStorage.getItem('arrow_puzzle_midgame_save');
+      const savedStr = localStorage.getItem("arrow_puzzle_midgame_save");
       if (savedStr) {
         const saved = JSON.parse(savedStr);
         if (
           saved.levelNumber === dailyLvl &&
           saved.activePaths &&
           saved.activePaths.length > 0 &&
-          saved.activePaths.some((p: any) => p.animState.type !== 'escaping') &&
-          saved.screen === 'DAILY_SCREEN'
+          saved.activePaths.some((p: any) => p.animState.type !== "escaping") &&
+          saved.screen === "DAILY_SCREEN"
         ) {
           // Resume saved daily challenge state!
           const config = getLevelConfig(dailyLvl);
@@ -356,7 +430,7 @@ function AppInner() {
           setActivePaths(saved.activePaths);
           setLives(saved.lives ?? 3);
           setMovesLeft(saved.movesLeft ?? config.maxMoves);
-          setScreen('DAILY_SCREEN');
+          setScreen("DAILY_SCREEN");
           audio.playTap();
           return;
         }
@@ -366,7 +440,7 @@ function AppInner() {
     }
 
     loadLevel(dailyLvl, true);
-    setScreen('DAILY_SCREEN');
+    setScreen("DAILY_SCREEN");
     audio.playTap();
   };
 
@@ -374,15 +448,15 @@ function AppInner() {
   const handleLoseLife = () => {
     setLives((prev) => {
       const next = prev - 1;
-      
+
       // Play satisfying custom shatter/heartcrack audio!
       audio.playHeartBreak();
 
       if (next <= 0) {
-        // Trigger Out Of Lives modal delay to let bump finish
+        // Automatically restart the level when lives are exhausted
         setTimeout(() => {
-          setShowLivesModal(true);
-        }, 500);
+          handleRestartLevel();
+        }, 1200); // Wait 1.2s to let the user see the crash and process that they failed
       }
       return next;
     });
@@ -394,7 +468,7 @@ function AppInner() {
       const next = prev - 1;
       if (next <= 0 && activePaths.length > 0) {
         setTimeout(() => {
-          setErrorMessage('Out of moves! Tap restart to try again.');
+          setErrorMessage("Out of moves! Tap restart to try again.");
           audio.playGameOver();
         }, 0);
       }
@@ -424,11 +498,11 @@ function AppInner() {
     const nextLvl = levelNumber + 1;
     let earned = false;
 
-    if (screen !== 'DAILY_SCREEN') {
+    if (screen !== "DAILY_SCREEN") {
       if (nextLvl > maxUnlockedLevel) {
         setMaxUnlockedLevel(nextLvl);
       }
-      
+
       // Hint Rewards:
       // As requested, hints are not granted every level. Instead, the hint option is awarded
       // only after completing 3 normal gameplay levels!
@@ -438,13 +512,16 @@ function AppInner() {
         setHintsCount((prev) => prev + 1);
         setLevelsPlayedSinceLastHint(0);
         try {
-          localStorage.setItem('arrow_puzzle_levels_since_hint', '0');
+          localStorage.setItem("arrow_puzzle_levels_since_hint", "0");
         } catch {}
       } else {
         earned = false;
         setLevelsPlayedSinceLastHint(currentConsecutive);
         try {
-          localStorage.setItem('arrow_puzzle_levels_since_hint', String(currentConsecutive));
+          localStorage.setItem(
+            "arrow_puzzle_levels_since_hint",
+            String(currentConsecutive),
+          );
         } catch {}
       }
     }
@@ -452,11 +529,11 @@ function AppInner() {
     setJustEarnedHint(earned);
 
     const praises = [
-      { text: 'Nice Work!', emoji: '👏' },
-      { text: 'Impressive!', emoji: '🤠' },
-      { text: 'Outstanding!', emoji: '😊' },
-      { text: 'Brilliant!', emoji: '⭐' },
-      { text: 'Excellent!', emoji: '💯' }
+      { text: "Nice Work!", emoji: "👏" },
+      { text: "Impressive!", emoji: "🤠" },
+      { text: "Outstanding!", emoji: "😊" },
+      { text: "Brilliant!", emoji: "⭐" },
+      { text: "Excellent!", emoji: "💯" },
     ];
     const picked = praises[Math.floor(Math.random() * praises.length)];
     setClearedToast(picked);
@@ -470,9 +547,9 @@ function AppInner() {
 
   // Progress to next tier
   const handleNextGame = () => {
-    if (screen === 'DAILY_SCREEN') {
+    if (screen === "DAILY_SCREEN") {
       // Return back to standard path
-      setScreen('MENU');
+      setScreen("MENU");
     } else {
       const nextLvl = levelNumber + 1;
       if (nextLvl > maxUnlockedLevel) {
@@ -481,7 +558,6 @@ function AppInner() {
       setLevelNumber(nextLvl);
       loadLevel(nextLvl);
     }
-    setShowCompleteModal(false);
     audio.playTap();
   };
 
@@ -493,10 +569,14 @@ function AppInner() {
     }
 
     if (!currentConfig) return;
-    
+
     // Find all arrow paths that are currently solvable
-    const solvable = getSolvableArrows(activePaths, currentConfig.gridWidth, currentConfig.gridHeight);
-    
+    const solvable = getSolvableArrows(
+      activePaths,
+      currentConfig.gridWidth,
+      currentConfig.gridHeight,
+    );
+
     if (solvable.length > 0) {
       // Pick the first solvable path
       const chosenId = solvable[0];
@@ -513,12 +593,12 @@ function AppInner() {
       // Clear hint status after 3 seconds
       setTimeout(() => {
         setActivePaths((prev) =>
-          prev.map((p) => (p.id === chosenId ? { ...p, isHint: false } : p))
+          prev.map((p) => (p.id === chosenId ? { ...p, isHint: false } : p)),
         );
       }, 3500);
     } else {
       // Loop locked or no hints available
-      setErrorMessage('No valid moves left! Tap Reset.');
+      setErrorMessage("No valid moves left! Tap Reset.");
       audio.playCrash();
     }
   };
@@ -526,19 +606,29 @@ function AppInner() {
   // Monitor level completion when board is successfully cleared
   useEffect(() => {
     // A level is cleared when there are no more active, non-escaping arrows left
-    const isCleared = activePaths.length > 0 && activePaths.filter((p) => p.animState.type !== 'escaping').length === 0;
+    const isCleared =
+      activePaths.length > 0 &&
+      activePaths.filter((p) => p.animState.type !== "escaping").length === 0;
 
     if (
-      (screen === 'GAMEPLAY' || screen === 'DAILY_SCREEN') &&
+      (screen === "GAMEPLAY" || screen === "DAILY_SCREEN") &&
       currentConfig &&
       isCleared &&
       currentConfig.paths.length > 0 &&
       !showCompleteModal &&
-      !clearedToast
+      !clearedToast &&
+      !isLoadingLevel
     ) {
       handleLevelSuccess();
     }
-  }, [activePaths, screen, currentConfig, showCompleteModal, clearedToast]);
+  }, [
+    activePaths,
+    screen,
+    currentConfig,
+    showCompleteModal,
+    clearedToast,
+    isLoadingLevel,
+  ]);
 
   // Render the primary gameplay frame
   const renderGameplay = (titleStr: string, isDailyChallenge = false) => {
@@ -546,27 +636,33 @@ function AppInner() {
 
     return (
       <div className="flex flex-col min-h-screen bg-white pb-16 relative overflow-hidden select-none">
-        
         {/* Clean, Single-Row Header matching video precisely */}
         <div className="w-full max-w-xl mx-auto flex items-center justify-between px-6 py-4 z-10 shrink-0">
-          
           {/* Left Arrow count + Home button */}
           <div className="flex items-center gap-1.5">
             <button
               onClick={() => {
-                setScreen('MENU');
+                setScreen("MENU");
                 audio.playTap();
               }}
               className="flex items-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 px-3 py-1.5 rounded-full text-xs font-black shadow-xs transition transform active:scale-95 cursor-pointer border border-slate-200/50"
               title="Go Home"
             >
               <Home className="w-3.5 h-3.5 stroke-[2.5]" />
-              <span className="text-[11px] uppercase font-black tracking-wide">Home</span>
+              <span className="text-[11px] uppercase font-black tracking-wide">
+                Home
+              </span>
             </button>
-            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-100 px-2.5 py-1.5 rounded-full shadow-xs" title="Remaining arrows to escape">
+            <div
+              className="flex items-center gap-1.5 bg-slate-50 border border-slate-100 px-2.5 py-1.5 rounded-full shadow-xs"
+              title="Remaining arrows to escape"
+            >
               <Send className="w-3 h-3 text-[#1e2540] fill-current rotate-45 animate-pulse" />
               <span className="text-xs font-black text-[#1e2540] leading-none">
-                {activePaths.filter((p) => p.animState.type !== 'escaping').length}
+                {
+                  activePaths.filter((p) => p.animState.type !== "escaping")
+                    .length
+                }
               </span>
             </div>
           </div>
@@ -590,9 +686,9 @@ function AppInner() {
                 <Heart
                   key={heartVal}
                   className={`w-5 h-5 transition-all duration-300 ${
-                    isFilled 
-                      ? 'text-rose-500 fill-rose-500 scale-110 drop-shadow-[0_2px_4px_rgba(244,63,94,0.3)] animate-pulse' 
-                      : 'text-slate-200 fill-slate-50/50 scale-90 opacity-30'
+                    isFilled
+                      ? "text-rose-500 fill-rose-500 scale-110 drop-shadow-[0_2px_4px_rgba(244,63,94,0.3)] animate-pulse"
+                      : "text-slate-200 fill-slate-50/50 scale-90 opacity-30"
                   }`}
                 />
               );
@@ -605,7 +701,6 @@ function AppInner() {
               Lvl {currentConfig.levelNumber}
             </div>
           </div>
-
         </div>
 
         {/* Active Design Pattern Title Header */}
@@ -614,51 +709,81 @@ function AppInner() {
             Active Layout Pattern
           </span>
           <h2 className="text-xl font-black text-[#1e2540] tracking-tight">
-            {currentConfig.title || 'Symmetric Alignment'}
+            {currentConfig.title || "Symmetric Alignment"}
           </h2>
         </div>
 
         {/* Primary Interactive Board */}
-        <div className="flex-1 flex flex-col justify-center items-center px-4 py-2 mt-4 z-10 relative">
-          <GameBoard
-            key={currentConfig.levelNumber}
-            gridWidth={currentConfig.gridWidth}
-            gridHeight={currentConfig.gridHeight}
-            paths={activePaths}
-            levelNumber={currentConfig.levelNumber}
-            onPathsChange={setActivePaths}
-            onSuccess={handleLevelSuccess}
-            onLoseLife={handleLoseLife}
-            onLoseMove={handleLoseMove}
-            showGridLines={showGridLines}
-            movesLeft={movesLeft}
-            onArrowClick={() => setShowGridLines(false)}
-          />
-
-          {/* Toast Overlay for Level praise, exactly as requested in Image 1, 2, 5 */}
-          {clearedToast && (
-            <div className="absolute inset-x-8 top-1/2 -translate-y-1/2 bg-white rounded-3xl p-6 shadow-[0_15px_40px_rgba(30,41,59,0.22)] border border-slate-50 flex flex-col items-center justify-center text-center z-40 animate-scaleUpCentered">
-              {/* Circular Emoji container with white border */}
-              <div className="absolute -top-11 w-20 h-20 bg-white border-4 border-slate-50 rounded-full shadow-[0_4px_12px_rgba(0,0,0,0.08)] flex items-center justify-center text-4xl select-none">
-                {clearedToast.emoji}
+        <div className="flex-1 w-full h-full flex flex-col justify-center items-center mt-4 z-10 relative overflow-hidden">
+          <TransformWrapper
+            initialScale={1}
+            minScale={0.1}
+            maxScale={5}
+            centerOnInit
+            wheel={{ step: 0.1 }}
+            pinch={{ step: 0.5 }}
+            doubleClick={{ disabled: true }}
+          >
+            <TransformComponent
+              wrapperStyle={{ width: "100%", height: "100%" }}
+              contentStyle={{
+                width: "100%",
+                height: "100%",
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+            >
+              <div className="px-4 py-2 flex justify-center items-center w-full h-full">
+                {isLoadingLevel ? (
+                  <div className="flex flex-col items-center justify-center animate-pulse text-slate-400">
+                    <RefreshCw className="w-10 h-10 animate-spin text-blue-500 mb-4" />
+                    <span className="font-bold text-sm tracking-widest uppercase">
+                      Building Level...
+                    </span>
+                  </div>
+                ) : (
+                  <GameBoard
+                    key={`${currentConfig.levelNumber}-${restartCount}`}
+                    gridWidth={currentConfig.gridWidth}
+                    gridHeight={currentConfig.gridHeight}
+                    paths={activePaths}
+                    levelNumber={currentConfig.levelNumber}
+                    onPathsChange={setActivePaths}
+                    onSuccess={handleLevelSuccess}
+                    onLoseLife={handleLoseLife}
+                    onLoseMove={handleLoseMove}
+                    showGridLines={showGridLines}
+                    movesLeft={movesLeft}
+                    onArrowClick={() => setShowGridLines(false)}
+                  />
+                )}
               </div>
-              <h4 className="text-3xl font-black text-blue-600 tracking-tight mt-6 select-none">
-                {clearedToast.text}
-              </h4>
-            </div>
-          )}
-
-          {/* Out of moves alert message box */}
-          {errorMessage && (
-            <div className="mt-4 bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs py-3.5 px-6 rounded-2xl shadow-sm text-center max-w-xs animate-shake">
-              {errorMessage}
-            </div>
-          )}
+            </TransformComponent>
+          </TransformWrapper>
         </div>
+        {/* Toast Overlay for Level praise, exactly as requested in Image 1, 2, 5 */}
+        {clearedToast && (
+          <div className="absolute inset-x-8 top-1/2 -translate-y-1/2 bg-white rounded-3xl p-6 shadow-[0_15px_40px_rgba(30,41,59,0.22)] border border-slate-50 flex flex-col items-center justify-center text-center z-40 animate-scaleUpCentered">
+            {/* Circular Emoji container with white border */}
+            <div className="absolute -top-11 w-20 h-20 bg-white border-4 border-slate-50 rounded-full shadow-[0_4px_12px_rgba(0,0,0,0.08)] flex items-center justify-center text-4xl select-none">
+              {clearedToast.emoji}
+            </div>
+            <h4 className="text-3xl font-black text-blue-600 tracking-tight mt-6 select-none">
+              {clearedToast.text}
+            </h4>
+          </div>
+        )}
+
+        {/* Out of moves alert message box */}
+        {errorMessage && (
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 mt-4 z-40 bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs py-3.5 px-6 rounded-2xl shadow-sm text-center max-w-xs animate-shake">
+            {errorMessage}
+          </div>
+        )}
 
         {/* Bottom Floating circular trigger action buttons */}
         <div className="w-full max-w-sm mx-auto flex justify-center items-center gap-6 px-6 shrink-0 z-10">
-          
           {/* Restart Level circular button */}
           <button
             onClick={handleRestartLevel}
@@ -675,9 +800,9 @@ function AppInner() {
               audio.playTap();
             }}
             className={`w-14 h-14 rounded-full flex items-center justify-center shadow-md hover:shadow-lg transition transform active:scale-95 cursor-pointer border ${
-              showGridLines 
-                ? 'bg-blue-600 border-blue-600 text-white' 
-                : 'bg-white border-slate-100 text-slate-500 hover:text-slate-700'
+              showGridLines
+                ? "bg-blue-600 border-blue-600 text-white"
+                : "bg-white border-slate-100 text-slate-500 hover:text-slate-700"
             }`}
             title="Toggle Alignment Dots"
           >
@@ -689,7 +814,9 @@ function AppInner() {
             <button
               onClick={() => {
                 audio.playCrash();
-                setErrorMessage('Hints are locked! Complete Level 1 to unlock hints.');
+                setErrorMessage(
+                  "Hints are locked! Complete Level 1 to unlock hints.",
+                );
                 setTimeout(() => setErrorMessage(null), 3000);
               }}
               className="w-14 h-14 bg-slate-50 border border-slate-200 rounded-full flex items-center justify-center shadow-md hover:shadow-lg transition transform active:scale-95 cursor-pointer text-slate-400 relative"
@@ -707,11 +834,15 @@ function AppInner() {
               onClick={handleTriggerHint}
               disabled={hintsCount <= 0}
               className={`w-14 h-14 bg-white border border-slate-100 rounded-full flex items-center justify-center shadow-md hover:shadow-lg transition transform active:scale-95 cursor-pointer relative ${
-                hintsCount > 0 ? 'text-amber-500 animate-pulse' : 'text-slate-300 opacity-50'
+                hintsCount > 0
+                  ? "text-amber-500 animate-pulse"
+                  : "text-slate-300 opacity-50"
               }`}
               title={`Get Hint (${hintsCount} available)`}
             >
-              <Lightbulb className={`w-6 h-6 stroke-[2.2] ${hintsCount > 0 ? 'fill-amber-100/50' : ''}`} />
+              <Lightbulb
+                className={`w-6 h-6 stroke-[2.2] ${hintsCount > 0 ? "fill-amber-100/50" : ""}`}
+              />
               {hintsCount > 0 && (
                 <div className="absolute -top-1 -right-1 w-6 h-6 bg-[#007cd8] border-2 border-white text-white font-black text-[10px] rounded-full flex items-center justify-center shadow-sm">
                   {hintsCount}
@@ -719,7 +850,6 @@ function AppInner() {
               )}
             </button>
           )}
-
         </div>
 
         {/* Victory completion full overlay */}
@@ -729,13 +859,13 @@ function AppInner() {
             paths={currentConfig.paths}
             gridWidth={currentConfig.gridWidth}
             gridHeight={currentConfig.gridHeight}
-            isDaily={screen === 'DAILY_SCREEN'}
+            isDaily={screen === "DAILY_SCREEN"}
             onNextGame={handleNextGame}
             earnedHint={justEarnedHint}
             autoNext={autoNext}
             setAutoNext={setAutoNext}
             onMainMenu={() => {
-              setScreen('MENU');
+              setScreen("MENU");
               setShowCompleteModal(false);
               audio.playTap();
             }}
@@ -751,24 +881,23 @@ function AppInner() {
             }}
           />
         )}
-
       </div>
     );
   };
 
   // Main navigation portal router
   switch (screen) {
-    case 'GAMEPLAY':
-      return renderGameplay('Puzzle Board', false);
+    case "GAMEPLAY":
+      return renderGameplay("Puzzle Board", false);
 
-    case 'DAILY_SCREEN':
-      return renderGameplay('Daily Challenge', true);
+    case "DAILY_SCREEN":
+      return renderGameplay("Daily Challenge", true);
 
-    case 'SETTINGS':
+    case "SETTINGS":
       return (
         <SettingsModal
           onClose={() => {
-            setScreen('GAMEPLAY');
+            setScreen("GAMEPLAY");
             audio.playTap();
           }}
           onRemoveAds={() => {
@@ -777,7 +906,7 @@ function AppInner() {
         />
       );
 
-    case 'MENU':
+    case "MENU":
     default:
       return (
         <MenuScreen
@@ -789,24 +918,24 @@ function AppInner() {
           onSelectLevel={(lvl) => {
             setLevelNumber(lvl);
             loadLevel(lvl);
-            setScreen('GAMEPLAY');
+            setScreen("GAMEPLAY");
             audio.playTap();
           }}
           onResetProgress={() => {
             setMaxUnlockedLevel(1);
             setLevelNumber(1);
             try {
-              localStorage.removeItem('arrow_puzzle_midgame_save');
-              localStorage.setItem('arrow_puzzle_hints', '0');
-              localStorage.setItem('arrow_puzzle_levels_since_hint', '0');
+              localStorage.removeItem("arrow_puzzle_midgame_save");
+              localStorage.setItem("arrow_puzzle_hints", "0");
+              localStorage.setItem("arrow_puzzle_levels_since_hint", "0");
             } catch {}
             setHintsCount(0);
             setLevelsPlayedSinceLastHint(0);
-            localStorage.setItem('arrow_puzzle_max_unlocked', '1');
-            localStorage.setItem('arrow_puzzle_lvl', '1');
+            localStorage.setItem("arrow_puzzle_max_unlocked", "1");
+            localStorage.setItem("arrow_puzzle_lvl", "1");
             // Load Level 1 configurations freshly
             loadLevel(1);
-            setScreen('MENU');
+            setScreen("MENU");
             audio.playCrash();
           }}
         />
